@@ -14,7 +14,7 @@ namespace Homework1_6_9
             int countCustomers = 4;
             Shop shop = new Shop(countCustomers);
 
-            shop.ReceptionCustomersAtCheckout();
+            shop.AcceptCustomers();
         }
     }
 
@@ -54,44 +54,110 @@ namespace Homework1_6_9
         private float _money;
         private Random _random;
         private RackProduct _products;
+        private Rack _basket;
 
         public Customer(float money, int number)
         {
             Number = number;
-            Basket = new Rack();
+            _basket = new Rack();
             _money = money;
             _random = new Random();
             _products = new RackProduct();
         }
 
         public int Number { get; private set; }
-        public Rack Basket { get; private set; }
 
         public void ShowAllSaleItems()
         {
             Console.WriteLine("Мои товары:");
-            Basket.ShowAllSaleItems();
+            _basket.ShowAllSaleItems();
         }
 
-        private float SumCostSaleItems()
-        { 
-            return Basket.SumCostSaleItems();
+        public bool TryReturnSaleItems(out CellSaleItem exchangeableСellSaleItem)
+        {
+            if (_basket.TryGetCell(Console.ReadLine(), out CellSaleItem saleItemCell))
+            {
+                Console.WriteLine("Введите кол-во данного товара: ");
+
+                if (int.TryParse(Console.ReadLine(), out int wishingQuantity))
+                {
+                    if (saleItemCell.Quantity - wishingQuantity >= 0)
+                    {
+                        exchangeableСellSaleItem = new CellSaleItem(saleItemCell.SaleItem, wishingQuantity);
+                        saleItemCell.SendSaleItem(wishingQuantity);
+                        _basket.RemoveVoidSaleItems();
+                        return true;
+                    }
+                    else
+                    {
+                        Console.WriteLine("Столько товара нет!");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("Неверный ввод кол-ва товара");
+                }
+
+            }
+            else
+            {
+                Console.WriteLine("Такого продукта нет!");
+            }
+
+            exchangeableСellSaleItem = null;
+            return false;
         }
 
-        public bool CanBuySaleItems()
+        public void AddSaleItem(CellSaleItem addedSaleItem)
+        {
+            _basket.AddSaleItem(addedSaleItem);
+        }
+
+        public bool TryBuyAllSaleItems(out List<CellSaleItem> returnableSaleItems)
+        {
+            bool canBuyAllSaleItems = true;
+            returnableSaleItems = new List<CellSaleItem>();
+
+            while (CanBuySaleItems() == false)
+            {
+                if (TryFindReturnableSaleItem(out CellSaleItem returnableSaleItem))
+                {
+                    returnableSaleItems.Add(returnableSaleItem);
+                    ShowMoneyInfo();
+                }
+
+                Console.ReadKey();
+            }
+
+            if (returnableSaleItems.Count > 0)
+            {
+                canBuyAllSaleItems = false;
+            }
+
+            BuySaleItems();
+            ShowInfo();
+            Console.WriteLine("Клиент обслужен!");
+            return canBuyAllSaleItems;
+        }
+
+        private bool CanBuySaleItems()
         {
             return SumCostSaleItems() <= _money;
         }
 
-        public bool TryFindReturnableSaleItem(out CellSaleItem saleItem)
+        private bool TryFindReturnableSaleItem(out CellSaleItem saleItem)
         {
-            int countSaleItems=Basket.SumCountSaleItems();
+            int countReturnableSaleItems = 1;
+            int countSaleItems =_basket.SumCountSaleItems();
 
             if (countSaleItems > 0)
             {
                 int returnableSaleItemNumber = _random.Next(1, countSaleItems+1);
-                CellSaleItem returnableSaleItem = Basket.FindSaleItemByNumber(returnableSaleItemNumber);
-                saleItem = returnableSaleItem;
+                CellSaleItem returnableSaleItem = _basket.FindSaleItemByNumber(returnableSaleItemNumber);
+                Console.Write("Вы убрали " + returnableSaleItem.SaleItem.Title + " в размере " + countReturnableSaleItems + "шт. ");
+                saleItem = new CellSaleItem(returnableSaleItem.SaleItem, countReturnableSaleItems);
+                returnableSaleItem.SendSaleItem(countReturnableSaleItems);
+                _basket.RemoveVoidSaleItems();
                 return true;
             }
 
@@ -100,11 +166,11 @@ namespace Homework1_6_9
             return false;
         }
 
-        public void BuySaleItems()
+        private void BuySaleItems()
         {
             _money -= SumCostSaleItems();
 
-            List<CellProduct> cellProducts = Basket.HandOverSaleItems();
+            List<CellProduct> cellProducts = _basket.HandOverSaleItems();
 
             foreach (var cell in cellProducts)
             {
@@ -112,16 +178,21 @@ namespace Homework1_6_9
             }
         }
 
-        public void ShowInfo()
+        private void ShowInfo()
         {
             Console.WriteLine("Осталось " + _money + " рублей. Купленные продукты:");
             Console.WriteLine();
             _products.ShowAllProducts();
         }
 
-        public void ShowMoneyInfo()
+        private void ShowMoneyInfo()
         {
             Console.WriteLine("Есть: " + _money + " рублей. Необходимо " + SumCostSaleItems() + " рублей");
+        }
+
+        private float SumCostSaleItems()
+        {
+            return _basket.SumCostSaleItems();
         }
     }
 
@@ -137,25 +208,7 @@ namespace Homework1_6_9
             FillCustomersData(countCustomers);
         }
 
-        private void FillCustomersData(int countCustomers)
-        {
-            int minMoney = 5000;
-            int maxMoney = 120000;
-            int money;
-
-            for (int i=0;i<countCustomers;i++)
-            {
-                money = _random.Next(minMoney, maxMoney+1);
-                _customers.Enqueue(new Customer(money, i+1));
-            }
-
-            foreach (var customer in _customers)
-            {
-                AddSaleItems(customer);
-            }
-        }
-
-        public void ReceptionCustomersAtCheckout()
+        public void AcceptCustomers()
         {
             while (_customers.Count>0)
             {
@@ -170,26 +223,12 @@ namespace Homework1_6_9
 
         private void BuySaleItems(Customer customer)
         {
-            while(customer.CanBuySaleItems()==false)
+            if (customer.TryBuyAllSaleItems(out List<CellSaleItem> returnableSaleItems)==false)
             {
-                ReturnRandomSaleItem(customer);
-                Console.ReadKey();
-            }
-
-            customer.BuySaleItems();
-            customer.ShowInfo();
-            Console.WriteLine("Клиент обслужен!");
-        }
-
-        private void ReturnRandomSaleItem(Customer customer)
-        {
-            int countReturnableSaleItems = 1;
-
-            if (customer.TryFindReturnableSaleItem(out CellSaleItem saleItem))
-            {
-                Console.Write("Вы убрали " + saleItem.SaleItem.Title + " в размере " + countReturnableSaleItems + "шт. ");
-                HandOverSaleItem(saleItem, countReturnableSaleItems, customer.Basket, _allSaleItems);
-                customer.ShowMoneyInfo();
+                foreach (var cell in returnableSaleItems)
+                {
+                    _allSaleItems.AddSaleItem(cell);
+                }
             }
         }
 
@@ -257,12 +296,30 @@ namespace Homework1_6_9
             customer.ShowAllSaleItems();
             Console.Write("\nВведите имя продукта, который хотите вернуть на полку: ");
 
-            HandOverSaleItems(customer.Basket, _allSaleItems);
+            if (customer.TryReturnSaleItems(out CellSaleItem addedSaleItem))
+            {
+                _allSaleItems.AddSaleItem(addedSaleItem);
+            }
         }
 
-        private void HandOverSaleItems(Rack givingRack, Rack gettingRack)
+        private void AddSaleItem(Customer customer)
         {
-            if (givingRack.TryGetCell(Console.ReadLine(), out CellSaleItem saleItemCell))
+            Console.Clear();
+            customer.ShowAllSaleItems();
+            Console.WriteLine("Товары доступные в магазине:");
+            Console.WriteLine();
+            _allSaleItems.ShowAllSaleItems();
+            Console.Write("\nВведите имя продукта, который хотите положить в корзину: ");
+
+            if (TrySendSaleItems(out CellSaleItem sendedSaleItem))
+            {
+                customer.AddSaleItem(sendedSaleItem);
+            }
+        }
+
+        private bool TrySendSaleItems(out CellSaleItem exchangeableСellSaleItem)
+        {
+            if (_allSaleItems.TryGetCell(Console.ReadLine(), out CellSaleItem saleItemCell))
             {
                 Console.WriteLine("Введите кол-во данного товара: ");
 
@@ -270,7 +327,10 @@ namespace Homework1_6_9
                 {
                     if (saleItemCell.Quantity - wishingQuantity >= 0)
                     {
-                        HandOverSaleItem(saleItemCell, wishingQuantity, givingRack, gettingRack);
+                        exchangeableСellSaleItem = new CellSaleItem(saleItemCell.SaleItem, wishingQuantity);
+                        saleItemCell.SendSaleItem(wishingQuantity);
+                        _allSaleItems.RemoveVoidSaleItems();
+                        return true;
                     }
                     else
                     {
@@ -287,26 +347,27 @@ namespace Homework1_6_9
             {
                 Console.WriteLine("Такого продукта нет!");
             }
+
+            exchangeableСellSaleItem = null;
+            return false;
         }
 
-        private void HandOverSaleItem(CellSaleItem saleItemCell, int wishingQuantity, Rack givingRack, Rack gettingRack)
+        private void FillCustomersData(int countCustomers)
         {
-            saleItemCell.HandOverSaleItem(wishingQuantity);
-            CellSaleItem addedSaleItem = new CellSaleItem(saleItemCell.SaleItem, wishingQuantity);
-            gettingRack.AddSaleItem(addedSaleItem);
-            givingRack.RemoveVoidSaleItems();
-        }
+            int minMoney = 5000;
+            int maxMoney = 120000;
+            int money;
 
-        private void AddSaleItem(Customer customer)
-        {
-            Console.Clear();
-            customer.ShowAllSaleItems();
-            Console.WriteLine("Товары доступные в магазине:");
-            Console.WriteLine();
-            _allSaleItems.ShowAllSaleItems();
-            Console.Write("\nВведите имя продукта, который хотите положить в корзину: ");
+            for (int i = 0; i < countCustomers; i++)
+            {
+                money = _random.Next(minMoney, maxMoney + 1);
+                _customers.Enqueue(new Customer(money, i + 1));
+            }
 
-            HandOverSaleItems(_allSaleItems, customer.Basket);
+            foreach (var customer in _customers)
+            {
+                AddSaleItems(customer);
+            }
         }
     }
 
@@ -326,7 +387,7 @@ namespace Homework1_6_9
             foreach (var saleItem in _saleItems)
             {
                 cellProducts.Add(new CellProduct(new Product(saleItem.SaleItem.Title), saleItem.Quantity));
-                saleItem.HandOverSaleItem(saleItem.Quantity);
+                saleItem.SendSaleItem(saleItem.Quantity);
             }
 
             RemoveVoidSaleItems();
@@ -451,7 +512,7 @@ namespace Homework1_6_9
         public SaleItem SaleItem { get; private set; }
         public int Quantity { get; private set; }
 
-        public void HandOverSaleItem(int quantity)
+        public void SendSaleItem(int quantity)
         {
             Quantity -= quantity;
         }
